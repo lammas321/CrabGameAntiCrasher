@@ -114,8 +114,7 @@ namespace AntiCrasher
 
             if (playerPosition.IsInvalid())
             {
-                AntiCrasher.Instance.Flag(param_0, AntiCrashReason.InvalidPlayerPositionPacket, banOffender: false);
-                GameServer.Instance.QueueRespawn(param_0, 0f);
+                AntiCrasher.Instance.Flag(param_0, AntiCrashReason.InvalidPlayerPositionPacket);
                 param_1.set_readPos(initialReadPos);
                 return false;
             }

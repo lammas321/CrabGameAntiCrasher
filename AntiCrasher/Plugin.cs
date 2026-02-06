@@ -36,7 +36,7 @@ namespace AntiCrasher
 
         internal void Flag(ulong clientId, AntiCrashReason reason, bool banOffender = true)
         {
-            if (!banOffender || !SteamManager.Instance.IsLobbyOwner() || clientId == SteamUser.GetSteamID().m_SteamID || LobbyManager.bannedPlayers.Contains(clientId))
+            if (!banOffender || !SteamManager.Instance.IsLobbyOwner() || clientId == SteamUser.GetSteamID().m_SteamID)
             {
                 Log.LogInfo($"Flagged {SteamFriends.GetFriendPersonaName(new(clientId))} ({clientId}) for: {reason}");
 
@@ -51,14 +51,13 @@ namespace AntiCrasher
             if (Chatbox.Instance)
                 Chatbox.Instance.AppendMessage(0ul, $"Banned {SteamFriends.GetFriendPersonaName(new(clientId))} ({clientId}) for: {reason}", "AntiCrasher");
 
-            // Disabled banning functionality for now, still need to properly test against false flags and that this is effective at catching crashers
-
+            // Disabled permanent banning functionality for now, still need to properly test against false flags and that this is effective at catching crashers
+            // LobbyManager.bannedPlayers.Add(clientId);
             //if (PersistentDataCompatibility.Enabled)
                 //PersistentDataCompatibility.SetClientData(clientId, "Banned", $"[AntiCrasher] detected: {reason}");
 
             LobbyTracker.blockedMembers.Add(clientId);
-            SteamManager.Instance.StopP2P(new(clientId));
-            LobbyManager.Instance.KickPlayer(clientId);
+            ServerSend.LobbyClosed(clientId, LobbyManager_LeaveCode.ServerClosed);
         }
     }
     
