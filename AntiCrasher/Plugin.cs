@@ -56,12 +56,15 @@ namespace AntiCrasher
             //if (PersistentDataCompatibility.Enabled)
                 //PersistentDataCompatibility.SetClientData(clientId, "Banned", $"[AntiCrasher] detected: {reason}");
 
-            //LobbyManager.Instance.BanPlayer(clientId);
+            LobbyTracker.blockedMembers.Add(clientId);
+            SteamManager.Instance.StopP2P(new(clientId));
+            LobbyManager.Instance.KickPlayer(clientId);
         }
     }
     
     internal enum AntiCrashReason
     {
+        InvalidPacketLength,
         InvalidClientPacketType,
         InvalidServerPacketType,
 

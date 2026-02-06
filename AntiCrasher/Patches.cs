@@ -10,6 +10,15 @@ namespace AntiCrasher
 {
     internal static class HandlePacketPatches
     {
+        [HarmonyPatch(typeof(SteamManager), nameof(SteamManager.Awake))]
+        [HarmonyPostfix]
+        internal static void PostSteamManagerAwake()
+        {
+            TMPro.TMP_Settings.instance.m_warningsDisabled = true;
+        }
+
+
+
         private const int MIN_PACKET_SIZE = 8;
 
         // Check for invalid packets
@@ -27,8 +36,10 @@ namespace AntiCrasher
 
             int size = param_0.m_cbSize;
             if (size < MIN_PACKET_SIZE) // Discard short packet, will always throw an exception when the game tries to handle it
+            {
+                AntiCrasher.Instance.Flag(clientId, AntiCrashReason.InvalidPacketLength);
                 return false;
-
+            }
 
             Il2CppStructArray<byte> data = new(size);
             Marshal.Copy(param_0.m_pData, data, 0, size);

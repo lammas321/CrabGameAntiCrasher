@@ -7,7 +7,8 @@ namespace AntiCrasher
     internal static class LobbyTracker
     {
         internal static HashSet<ulong> currentMembers = [];
-
+        internal static HashSet<ulong> blockedMembers = [];
+        
         internal static void Init()
         {
             Harmony harmony = new($"{MyPluginInfo.PLUGIN_NAME}.{nameof(LobbyTracker)}");
@@ -22,6 +23,7 @@ namespace AntiCrasher
         internal static void PreSteamManagerLobbyEnter(LobbyEnter_t param_1)
         {
             currentMembers.Clear();
+            blockedMembers.Clear();
 
             CSteamID lobbyId = new(param_1.m_ulSteamIDLobby);
             int members = SteamMatchmaking.GetNumLobbyMembers(lobbyId);
@@ -40,7 +42,10 @@ namespace AntiCrasher
             if (param_1.m_rgfChatMemberStateChange == 1u)
                 currentMembers.Add(param_1.m_ulSteamIDUserChanged);
             else
+            {
                 currentMembers.Remove(param_1.m_ulSteamIDUserChanged);
+                blockedMembers.Remove(param_1.m_ulSteamIDUserChanged);
+            }
         }
 
         // Clear members when leaving the lobby
@@ -50,6 +55,7 @@ namespace AntiCrasher
         internal static void PreSteamMatchmakingLeaveLobby()
         {
             currentMembers.Clear();
+            blockedMembers.Clear();
         }
     }
 }

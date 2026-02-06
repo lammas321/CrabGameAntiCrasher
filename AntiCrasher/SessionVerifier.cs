@@ -12,7 +12,7 @@ namespace AntiCrasher
         }
 
         internal static bool IsValid(ulong clientId)
-            => LobbyTracker.currentMembers.Contains(clientId);
+            => clientId == SteamUser.GetSteamID().m_SteamID || (LobbyTracker.currentMembers.Contains(clientId) && !LobbyTracker.blockedMembers.Contains(clientId));
 
 
         // Don't accept P2P networking sessions with users not in your lobby
