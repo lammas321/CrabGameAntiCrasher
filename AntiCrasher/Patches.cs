@@ -19,8 +19,11 @@ namespace AntiCrasher
         internal static bool PreSteamPacketManagerHandlePacket(SteamNetworkingMessage_t param_0, int param_1)
         {
             ulong clientId = param_0.m_identityPeer.GetSteamID64();
-            if (!SessionVerifier.IsValid(clientId)) // Discard packet, receiving a packet from someone not in the same lobby
+            if (!SessionVerifier.IsValid(clientId)) // Discard packet and stop P2P with sender, receiving a packet from someone not in the same lobby
+            {
+                SteamManager.Instance.StopP2P(new(clientId));
                 return false;
+            }
 
             int size = param_0.m_cbSize;
             if (size < MIN_PACKET_SIZE) // Discard short packet, will always throw an exception when the game tries to handle it
