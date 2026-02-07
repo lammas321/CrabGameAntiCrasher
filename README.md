@@ -9,7 +9,7 @@ A BepInEx mod for Crab Game that acts to remedy the effects of crashers.
 - P2P sessions and packets from those who aren't in your current lobby are discarded, avoiding 24/7 crashers.
 - Invalid packets which would result in exceptions and legitimate packets being missed are discarded, and those who send them are flagged.
 - Exceptions that occur during the handling of any packet are ignored, as to not lead to packets being handled later that frame being ignored.
-- Unused packets are discarded and those who use them are flagged, a sign of random packet spam crashers. (PingPong, ColorChangeRequest, RequestGameStartedCooldown, TryBuyItem)
+- Unused packets are discarded and those who use them are flagged, a sign of random packet spam crashers. (PingPong, ColorChangeRequest, RequestGameStartedCooldown, TryBuyItem, PlayerReload)
 - Packets containing NaN, Infinite, or otherwise absurd/impossible float/Vector3 values for position, rotation, and damage direction, which could lead to an unplayable state are discarded and those who send them are flagged, often the result of invalid knockback crashers.
 
 ## What does it mean when someone is flagged?

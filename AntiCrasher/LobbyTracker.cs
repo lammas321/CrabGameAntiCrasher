@@ -7,7 +7,7 @@ namespace AntiCrasher
     internal static class LobbyTracker
     {
         internal static HashSet<ulong> currentMembers = [];
-        internal static HashSet<ulong> blockedMembers = [];
+        internal static HashSet<ulong> blockedMembers = []; // TODO: Once banning is used, make these blocks permanent
         
         internal static void Init()
         {

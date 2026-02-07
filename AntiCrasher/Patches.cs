@@ -1,8 +1,16 @@
-﻿using CrabDevKit.Intermediary;
+﻿//#define PacketLog
+
+using BepInEx;
+using BepInEx.IL2CPP.Utils;
+using CrabDevKit.Intermediary;
 using HarmonyLib;
 using Il2CppSystem.Runtime.InteropServices;
 using SteamworksNative;
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using UnhollowerBaseLib;
 using UnityEngine;
 
@@ -10,12 +18,42 @@ namespace AntiCrasher
 {
     internal static class HandlePacketPatches
     {
-        [HarmonyPatch(typeof(SteamManager), nameof(SteamManager.Awake))]
-        [HarmonyPostfix]
-        internal static void PostSteamManagerAwake()
+        
+#if PacketLog
+        internal sealed class PacketLog
         {
+            internal ulong senderId;
+            internal int channel;
+            internal byte[] bytes;
+        }
+
+        internal static Coroutine packetLogCoro;
+        internal static List<PacketLog> packetLog = [];
+
+        internal static IEnumerator CoroPacketLog()
+        {
+            while (true)
+            {
+                yield return null;
+                if (Input.GetKeyDown(KeyCode.P))
+                {
+                    StringBuilder sb = new();
+                    foreach (PacketLog log in packetLog)
+                        sb.Append($"{SteamFriends.GetFriendPersonaName(new(log.senderId))} (@{log.senderId}) {(SteamPacketManager_NetworkChannel)log.channel} Length:{log.bytes.Length} {BitConverter.ToString(log.bytes)}\n");
+
+                    File.WriteAllText(Path.Combine(Paths.BepInExRootPath, "PacketLog.txt"), sb.ToString());
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(MainManager), nameof(MainManager.Awake))]
+        [HarmonyPostfix]
+        internal static void PostMainManagerAwake()
+        {
+            packetLogCoro ??= MainManager.Instance.StartCoroutine(CoroPacketLog());
             TMPro.TMP_Settings.instance.m_warningsDisabled = true;
         }
+#endif
 
 
 
@@ -50,6 +88,9 @@ namespace AntiCrasher
             packet.ReadInt(true); // Packet length, discard
             int type = packet.ReadInt(true);
 
+#if PacketLog
+            packetLog.Add(new PacketLog() { senderId = clientId, channel = param_1, bytes = data});
+#endif
 
             // Flag invalid packet types
             if ((SteamPacketManager_NetworkChannel)param_1 == SteamPacketManager_NetworkChannel.ToServer)
@@ -66,12 +107,29 @@ namespace AntiCrasher
                     case ClientPackets.lobbyVisualsChangeColor: AntiCrasher.Instance.Flag(clientId, AntiCrashReason.UnusedColorChangeRequestPacket); return false;
                     case ClientPackets.gameStartedCooldown: AntiCrasher.Instance.Flag(clientId, AntiCrashReason.UnusedRequestGameStartedCooldownPacket); return false;
                     case ClientPackets.buyItem: AntiCrasher.Instance.Flag(clientId, AntiCrashReason.UnusedTryBuyItemPacket); return false;
+                    case ClientPackets.playerReload: AntiCrasher.Instance.Flag(clientId, AntiCrashReason.UnusedPlayerReloadPacket); return false;
                 }
             }
-            else if (!Enum.IsDefined(typeof(ServerPackets), type))
+            else
             {
-                AntiCrasher.Instance.Flag(clientId, AntiCrashReason.InvalidServerPacketType);
-                return false;
+                if (!Enum.IsDefined(typeof(ServerPackets), type))
+                {
+                    AntiCrasher.Instance.Flag(clientId, AntiCrashReason.InvalidServerPacketType);
+                    return false;
+                }
+
+                switch ((ServerPackets)type)
+                {
+                    case ServerPackets.playerReload:
+                    {
+                        if (size < MIN_PACKET_SIZE + sizeof(ulong))
+                            return false;
+
+                        ulong otherClientId = packet.ReadUlong(true);
+                        AntiCrasher.Instance.Flag(otherClientId, AntiCrashReason.UnusedPlayerReloadPacketFromHost, banOffender: false);
+                        return false;
+                    }
+                }
             }
 
             return true;
@@ -145,6 +203,27 @@ namespace AntiCrasher
             return true;
         }
 
+        // Don't allow invalid animations
+        [HarmonyPatch(typeof(ServerHandle), nameof(ServerHandle.PlayerAnimation))]
+        [HarmonyPrefix]
+        [HarmonyPriority(int.MaxValue)]
+        internal static bool PreServerHandlePlayerAnimation(ulong param_0, Packet param_1)
+        {
+            int initialReadPos = param_1.get_readPos();
+
+            int playerAnimation = param_1.ReadInt(true);
+
+            if (!Enum.IsDefined(typeof(OnlinePlayerMovement_PlayerAnimation), playerAnimation))
+            {
+                AntiCrasher.Instance.Flag(param_0, AntiCrashReason.InvalidPlayerAnimationPacket);
+                param_1.set_readPos(initialReadPos);
+                return false;
+            }
+
+            param_1.set_readPos(initialReadPos);
+            return true;
+        }
+
         // Don't allow damaging Tantan illegally
         [HarmonyPatch(typeof(ServerHandle), nameof(ServerHandle.CrabDamage))]
         [HarmonyPrefix]
@@ -155,10 +234,11 @@ namespace AntiCrasher
 
             int itemId = param_1.ReadInt(true);
             int uniqueId = param_1.ReadInt(true);
-            
+
+            ItemData item = ItemManager.GetItemById(itemId);
             if (
-                ItemManager.GetItemById(itemId) == null ||
-                ItemManager.GetItemById(itemId).itemName != "Snowball" ||
+                item == null ||
+                item.itemName != "Snowball" ||
                 !SharedObjectManager.Instance.Contains(uniqueId)
             )
             {
@@ -170,8 +250,8 @@ namespace AntiCrasher
             SharedObject shared = SharedObjectManager.Instance.GetSharedObject(uniqueId);
             if (shared != null)
             {
-                ItemPrefab item = shared.GetComponent<ItemPrefab>();
-                if (item != null && item.itemData.itemID != itemId)
+                ItemPrefab itemPrefab = shared.GetComponent<ItemPrefab>();
+                if (itemPrefab != null && itemPrefab.itemData.itemID != itemId)
                 {
                     AntiCrasher.Instance.Flag(param_0, AntiCrashReason.InvalidCrabDamagePacket);
                     param_1.set_readPos(initialReadPos);
@@ -247,6 +327,28 @@ namespace AntiCrasher
             if (playerRotationX.IsInvalid() || playerRotationY.IsInvalid())
             {
                 AntiCrasher.Instance.Flag(clientId, AntiCrashReason.InvalidPlayerRotationPacketFromHost, banOffender: false);
+                param_0.set_readPos(initialReadPos);
+                return false;
+            }
+
+            param_0.set_readPos(initialReadPos);
+            return true;
+        }
+
+        // Don't allow players with invalid rotations
+        [HarmonyPatch(typeof(ClientHandle), nameof(ClientHandle.PlayerAnimation))]
+        [HarmonyPrefix]
+        [HarmonyPriority(int.MaxValue)]
+        internal static bool PreClientHandlePlayerAnimation(Packet param_0)
+        {
+            int initialReadPos = param_0.get_readPos();
+
+            ulong clientId = param_0.ReadUlong(true);
+            int playerAnimation = param_0.ReadInt(true);
+
+            if (!Enum.IsDefined(typeof(OnlinePlayerMovement_PlayerAnimation), playerAnimation))
+            {
+                AntiCrasher.Instance.Flag(clientId, AntiCrashReason.InvalidPlayerAnimationPacketFromHost, banOffender: false);
                 param_0.set_readPos(initialReadPos);
                 return false;
             }
