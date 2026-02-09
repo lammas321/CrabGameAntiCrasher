@@ -11,7 +11,7 @@
 	<PropertyGroup>
 		<AssemblyName>lammas123.AntiCrasher</AssemblyName>
 		<Product>AntiCrasher</Product>
-		<Version>0.1.1</Version>
+		<Version>1.0.0</Version>
 
 		<SteamDir Condition="'$(SteamDir)' == ''">S:\Steam</SteamDir>
 		<ProfileDir Condition="'$(ProfileDir)' == ''">C:\Users\lamma\AppData\Roaming\r2modmanPlus-local\CrabGame\profiles\modded</ProfileDir>

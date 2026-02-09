@@ -9,9 +9,13 @@ namespace AntiCrasher
     [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
     [BepInDependency("lammas123.CrabDevKit")]
     [BepInDependency("lammas123.PersistentData", BepInDependency.DependencyFlags.SoftDependency)]
-    public class AntiCrasher : BasePlugin
+    public sealed class AntiCrasher : BasePlugin
     {
         internal static AntiCrasher Instance;
+
+        internal bool chatFlags = true;
+        internal bool persistentDataBan = false;
+        internal bool packetLogging = false;
 
         public override void Load()
         {
@@ -22,8 +26,14 @@ namespace AntiCrasher
 
             Instance = this;
 
+            chatFlags = Config.Bind("AntiCrasher", "ChatFlags", true, "Whether to notify you about the Anti Crasher being flagged in the chatbox or not. You'll still be able to check for flags in the console or LogOutput.txt.").Value;
+            persistentDataBan = Config.Bind("AntiCrasher", "PersistentDataBans", false, "If flagged crashers should be permanently banned via PersistentData if it's installed.").Value;
+            packetLogging = Config.Bind("AntiCrasher", "PacketLogging", false, "If all received packets should be logged to PacketLog.txt at the root of your BepInEx directory.").Value;
+
             LobbyTracker.Init();
             SessionVerifier.Init();
+            if (packetLogging)
+                PacketLogger.Init();
 
             Harmony harmony = new(MyPluginInfo.PLUGIN_NAME);
             harmony.PatchAll(typeof(HandlePacketPatches));
@@ -38,7 +48,7 @@ namespace AntiCrasher
         {
             Log.LogInfo($"Flagged {SteamFriends.GetFriendPersonaName(new(clientId))} ({clientId}) for: {reason}");
 
-            if (Chatbox.Instance)
+            if (chatFlags && Chatbox.Instance)
                 Chatbox.Instance.AppendMessage(0ul, reason.ToString(), $"AntiCrasher Flagged {SteamFriends.GetFriendPersonaName(new(clientId))} for");
 
             if (!banOffender || !SteamManager.Instance.IsLobbyOwner() || clientId == SteamUser.GetSteamID().m_SteamID)
@@ -59,15 +69,15 @@ namespace AntiCrasher
                 return;
             }
 
-            // Disabled permanent banning functionality for now, still need to properly test against false flags and that this is effective at catching crashers
-            //if (PersistentDataCompatibility.Enabled)
-                //PersistentDataCompatibility.SetClientData(clientId, "Banned", $"[AntiCrasher] detected: {reason}");
+            
+            if (persistentDataBan && PersistentDataCompatibility.Enabled)
+                PersistentDataCompatibility.SetClientData(clientId, "Banned", $"[AntiCrasher] detected: {reason}");
 
             LobbyTracker.blockedMembers.Add(clientId);
-            LobbyManager.Instance.KickPlayer(clientId); // Will become BanPlayer
+            LobbyManager.Instance.BanPlayer(clientId);
         }
     }
-    
+
     internal enum AntiCrashReason
     {
         InvalidPacketLength,

@@ -1,16 +1,10 @@
-﻿//#define PacketLog
-
-using BepInEx;
-using BepInEx.IL2CPP.Utils;
+﻿using BepInEx.IL2CPP.Utils;
 using CrabDevKit.Intermediary;
 using HarmonyLib;
 using Il2CppSystem.Runtime.InteropServices;
 using SteamworksNative;
 using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.IO;
-using System.Text;
 using UnhollowerBaseLib;
 using UnityEngine;
 
@@ -18,30 +12,25 @@ namespace AntiCrasher
 {
     internal static class HandlePacketPatches
     {
-        
-#if PacketLog
-        internal sealed class PacketLog
-        {
-            internal ulong senderId;
-            internal int channel;
-            internal byte[] bytes;
-        }
+        internal static Coroutine keybindCoro;
 
-        internal static Coroutine packetLogCoro;
-        internal static List<PacketLog> packetLog = [];
-
-        internal static IEnumerator CoroPacketLog()
+        internal static IEnumerator CoroKeybinds()
         {
             while (true)
             {
                 yield return null;
-                if (Input.GetKeyDown(KeyCode.P))
-                {
-                    StringBuilder sb = new();
-                    foreach (PacketLog log in packetLog)
-                        sb.Append($"{SteamFriends.GetFriendPersonaName(new(log.senderId))} (@{log.senderId}) {(SteamPacketManager_NetworkChannel)log.channel} Length:{log.bytes.Length} {BitConverter.ToString(log.bytes)}\n");
 
-                    File.WriteAllText(Path.Combine(Paths.BepInExRootPath, "PacketLog.txt"), sb.ToString());
+                if (!Input.GetKey(KeyCode.LeftAlt) && !Input.GetKey(KeyCode.RightAlt))
+                    continue;
+
+                if (Input.GetKeyDown(KeyCode.T))
+                {
+                    //TestAntiCrash.Test();
+
+                    AntiCrasher.Instance.Log.LogInfo("Tested AntiCrasher");
+                    
+                    if (Chatbox.Instance)
+                        Chatbox.Instance.AppendMessage(0ul, "Functional", "AntiCrasher");
                 }
             }
         }
@@ -50,11 +39,8 @@ namespace AntiCrasher
         [HarmonyPostfix]
         internal static void PostMainManagerAwake()
         {
-            packetLogCoro ??= MainManager.Instance.StartCoroutine(CoroPacketLog());
-            TMPro.TMP_Settings.instance.m_warningsDisabled = true;
+            keybindCoro ??= MainManager.Instance.StartCoroutine(CoroKeybinds());
         }
-#endif
-
 
 
         private const int MIN_PACKET_SIZE = 8;
@@ -69,6 +55,8 @@ namespace AntiCrasher
             if (!SessionVerifier.IsValid(clientId)) // Discard packet and stop P2P with sender, receiving a packet from someone not in the same lobby
             {
                 SteamManager.Instance.StopP2P(new(clientId));
+                if (AntiCrasher.Instance.packetLogging)
+                    PacketLogger.EnqueuePacket(clientId, -1, []);
                 return false;
             }
 
@@ -76,6 +64,8 @@ namespace AntiCrasher
             if (size < MIN_PACKET_SIZE) // Discard short packet, will always throw an exception when the game tries to handle it
             {
                 AntiCrasher.Instance.Flag(clientId, AntiCrashReason.InvalidPacketLength);
+                if (AntiCrasher.Instance.packetLogging)
+                    PacketLogger.EnqueuePacket(clientId, -2, BitConverter.GetBytes(size));
                 return false;
             }
 
@@ -88,9 +78,8 @@ namespace AntiCrasher
             packet.ReadInt(true); // Packet length, discard
             int type = packet.ReadInt(true);
 
-#if PacketLog
-            packetLog.Add(new PacketLog() { senderId = clientId, channel = param_1, bytes = data});
-#endif
+            if (AntiCrasher.Instance.packetLogging)
+                PacketLogger.EnqueuePacket(clientId, param_1, data);
 
             // Flag invalid packet types
             if ((SteamPacketManager_NetworkChannel)param_1 == SteamPacketManager_NetworkChannel.ToServer)

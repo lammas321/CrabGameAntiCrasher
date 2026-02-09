@@ -20,12 +20,28 @@ namespace AntiCrasher
         [HarmonyPrefix]
         [HarmonyPriority(int.MaxValue)]
         internal static bool PreSteamManagerNewAcceptP2P(CSteamID param_1)
-            => IsValid(param_1.m_SteamID);
+        {
+            bool valid = IsValid(param_1.m_SteamID);
+            if (valid)
+                return true;
+
+            if (AntiCrasher.Instance.packetLogging)
+                PacketLogger.EnqueuePacket(param_1.m_SteamID, -1, []);
+            return false;
+        }
 
         [HarmonyPatch(typeof(SteamManager), nameof(SteamManager.NewAcceptP2P), [typeof(SteamNetworkingIdentity)])]
         [HarmonyPrefix]
         [HarmonyPriority(int.MaxValue)]
         internal static bool PreSteamManagerNewAcceptP2P(SteamNetworkingIdentity param_1)
-            => IsValid(param_1.GetSteamID64());
+        {
+            bool valid = IsValid(param_1.GetSteamID64());
+            if (valid)
+                return true;
+
+            if (AntiCrasher.Instance.packetLogging)
+                PacketLogger.EnqueuePacket(param_1.GetSteamID64(), -1, []);
+            return false;
+        }
     }
 }
