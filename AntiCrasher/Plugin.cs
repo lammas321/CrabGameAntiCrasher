@@ -39,7 +39,11 @@ namespace AntiCrasher
             harmony.PatchAll(typeof(HandlePacketPatches));
             harmony.PatchAll(typeof(ServerHandlePatches));
             harmony.PatchAll(typeof(ClientHandlePatches));
-            
+
+            harmony.PatchAll(typeof(ChatboxPatches));
+            harmony.PatchAll(typeof(PlayerChatDropPatches));
+            harmony.PatchAll(typeof(AntiShadowModPatches));
+
             Log.LogInfo($"Initialized [{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION}]");
         }
 
@@ -83,6 +87,7 @@ namespace AntiCrasher
         InvalidPacketLength,
         InvalidClientPacketType,
         InvalidServerPacketType,
+        UnauthorizedServerPacketFromNonHost,
 
         UnusedPingPongPacket,
         UnusedColorChangeRequestPacket,

@@ -26,7 +26,7 @@ namespace AntiCrasher
                 return true;
 
             if (AntiCrasher.Instance.packetLogging)
-                PacketLogger.EnqueuePacket(param_1.m_SteamID, -1, []);
+                PacketLogger.EnqueuePacket(param_1.m_SteamID, -1, -1, []);
             return false;
         }
 
@@ -40,7 +40,7 @@ namespace AntiCrasher
                 return true;
 
             if (AntiCrasher.Instance.packetLogging)
-                PacketLogger.EnqueuePacket(param_1.GetSteamID64(), -1, []);
+                PacketLogger.EnqueuePacket(param_1.GetSteamID64(), -1, -1, []);
             return false;
         }
     }

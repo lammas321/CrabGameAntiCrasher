@@ -12,9 +12,11 @@ namespace AntiCrasher
     {
         internal sealed class PacketLog
         {
+            internal DateTime time;
             internal ulong senderId;
             internal string senderName;
             internal int channel;
+            internal int packetThisFrame;
             internal byte[] bytes;
         }
 
@@ -81,12 +83,16 @@ namespace AntiCrasher
                     {
                         wroteAnything = true;
 
-                        batchBuilder.Append(log.senderName)
+                        batchBuilder.Append($"{DateTime.Now,-11:h:mm:ss tt} ")
+                            .Append(log.senderName)
                             .Append(" (@")
                             .Append(log.senderId)
                             .Append(") ");
 
-                        batchBuilder.Append((SteamPacketManager_NetworkChannel)log.channel)
+                        batchBuilder.Append('#')
+                            .Append(log.packetThisFrame)
+                            .Append(' ')
+                            .Append((SteamPacketManager_NetworkChannel)log.channel)
                             .Append(" Len:")
                             .Append(log.bytes.Length)
                             .Append(' ');
@@ -131,16 +137,18 @@ namespace AntiCrasher
         }
 
 
-        internal static void EnqueuePacket(ulong senderId, int channel, byte[] data)
+        internal static void EnqueuePacket(ulong senderId, int channel, int packetThisFrame, byte[] data)
         {
             if (!AntiCrasher.Instance.packetLogging || !writerRunning || senderId == 0ul)
                 return;
             
             packetQueue.Enqueue(new PacketLog
             {
+                time = DateTime.Now,
                 senderId = senderId,
                 senderName = SteamFriends.GetFriendPersonaName(new CSteamID(senderId)),
                 channel = channel,
+                packetThisFrame = packetThisFrame,
                 bytes = data
             });
             signal.Set();

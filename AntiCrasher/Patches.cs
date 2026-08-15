@@ -5,6 +5,7 @@ using Il2CppSystem.Runtime.InteropServices;
 using SteamworksNative;
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnhollowerBaseLib;
 using UnityEngine;
 
@@ -45,18 +46,46 @@ namespace AntiCrasher
 
         private const int MIN_PACKET_SIZE = 8;
 
+
+        // Ensure all packets are handled in the frame they're received, beyond the 70 message limit
+        private static int _maxHandledPackets = 0;
+        private static int _totalHandledPackets = 0;
+        [HarmonyPatch(typeof(SteamPacketManager), nameof(SteamPacketManager.Update))]
+        [HarmonyPostfix]
+        internal static void PostSteamPacketManagerUpdate()
+        {
+            while (_maxHandledPackets == SteamPacketManagerExtensions.get_deobf_messagesToCheckFor())
+            {
+                AntiCrasher.Instance.Log.LogInfo("Handled 70 packets! Checking for more...");
+
+                _maxHandledPackets = 0;
+                SteamPacketManager.CheckForPackets();
+            }
+            _totalHandledPackets = 0;
+        }
+
+        [HarmonyPatch(typeof(SteamNetworkingMessages), nameof(SteamNetworkingMessages.ReceiveMessagesOnChannel))]
+        [HarmonyPostfix]
+        internal static void PostSteamPacketManagerUpdate(int __result, int nLocalChannel)
+        {
+            if ((nLocalChannel == (int)SteamPacketManager_NetworkChannel.ToClient || nLocalChannel == (int)SteamPacketManager_NetworkChannel.ToServer) && __result > _maxHandledPackets)
+                _maxHandledPackets = __result;
+        }
+
         // Check for invalid packets
         [HarmonyPatch(typeof(SteamPacketManager), nameof(SteamPacketManager.Method_Private_Static_Void_SteamNetworkingMessage_t_Int32_0))]
         [HarmonyPrefix]
         [HarmonyPriority(int.MinValue)]
         internal static bool PreSteamPacketManagerHandlePacket(SteamNetworkingMessage_t param_0, int param_1)
         {
+            _totalHandledPackets++;
+
             ulong clientId = param_0.m_identityPeer.GetSteamID64();
             if (!SessionVerifier.IsValid(clientId)) // Discard packet and stop P2P with sender, receiving a packet from someone not in the same lobby
             {
                 SteamManager.Instance.StopP2P(new(clientId));
                 if (AntiCrasher.Instance.packetLogging)
-                    PacketLogger.EnqueuePacket(clientId, -1, []);
+                    PacketLogger.EnqueuePacket(clientId, -1, _totalHandledPackets, []);
                 return false;
             }
 
@@ -65,7 +94,7 @@ namespace AntiCrasher
             {
                 AntiCrasher.Instance.Flag(clientId, AntiCrashReason.InvalidPacketLength);
                 if (AntiCrasher.Instance.packetLogging)
-                    PacketLogger.EnqueuePacket(clientId, -2, BitConverter.GetBytes(size));
+                    PacketLogger.EnqueuePacket(clientId, -2, _totalHandledPackets, []);
                 return false;
             }
 
@@ -79,7 +108,7 @@ namespace AntiCrasher
             int type = packet.ReadInt(true);
 
             if (AntiCrasher.Instance.packetLogging)
-                PacketLogger.EnqueuePacket(clientId, param_1, data);
+                PacketLogger.EnqueuePacket(clientId, param_1, _totalHandledPackets, data);
 
             // Flag invalid packet types
             if ((SteamPacketManager_NetworkChannel)param_1 == SteamPacketManager_NetworkChannel.ToServer)
@@ -107,6 +136,13 @@ namespace AntiCrasher
                     return false;
                 }
 
+                if (clientId != SteamMatchmaking.GetLobbyOwner(SteamManager.Instance.currentLobby).m_SteamID)
+                {
+                    if ((ServerPackets)type == ServerPackets.sendSerializedInventory || (ServerPackets)type == ServerPackets.sendSerializedDrop)
+                        AntiCrasher.Instance.Flag(clientId, AntiCrashReason.UnauthorizedServerPacketFromNonHost);
+                    return false;
+                }
+
                 switch ((ServerPackets)type)
                 {
                     case ServerPackets.playerReload:
@@ -128,10 +164,12 @@ namespace AntiCrasher
         // Here we catch the exception, but continue handling packets as though no error occured
         [HarmonyPatch(typeof(SteamPacketManager), nameof(SteamPacketManager.Method_Private_Static_Void_SteamNetworkingMessage_t_Int32_0))]
         [HarmonyFinalizer]
-        internal static void FinalSteamPacketManagerHandlePacket(SteamNetworkingMessage_t param_0, int param_1, Exception __exception)
+        internal static Exception FinalSteamPacketManagerHandlePacket(SteamNetworkingMessage_t param_0, int param_1, Exception __exception)
         {
             if (__exception != null)
                 AntiCrasher.Instance.Log.LogError($"An exception occurred handling a {(SteamPacketManager_NetworkChannel)param_1} packet from {SteamFriends.GetFriendPersonaName(param_0.m_identityPeer.GetSteamID())} ({param_0.m_identityPeer.GetSteamID64()}):\n{__exception}");
+
+            return null;
         }
     }
 
@@ -368,6 +406,109 @@ namespace AntiCrasher
 
             param_0.set_readPos(initialReadPos);
             return true;
+        }
+    }
+
+
+    internal static class ChatboxPatches
+    {
+        // Don't allow force message to make the messages string really long
+        [HarmonyPatch(typeof(Chatbox), nameof(Chatbox.ForceMessage))]
+        [HarmonyPostfix]
+        internal static void PostChatboxForceMessage(Chatbox __instance)
+        {
+            if (__instance.messages.text.Length > __instance.get_maxChars())
+                __instance.messages.text = __instance.messages.text[^(__instance.get_purgeAmount())..];
+	    }
+    }
+
+
+    internal static class PlayerChatDropPatches
+    {
+        // Don't do rich text on player names in player chat drops
+        private static bool _shouldNotParse = false;
+
+        [HarmonyPatch(typeof(Deobf_SteamInventory), nameof(Deobf_SteamInventory.PlayerChatDrop))]
+        [HarmonyPrefix]
+        internal static void PreDeobf_SteamInventoryPlayerChatDrop()
+        {
+            _shouldNotParse = true;
+        }
+        [HarmonyPatch(typeof(Deobf_SteamInventory), nameof(Deobf_SteamInventory.PlayerChatDrop))]
+        [HarmonyPostfix]
+        internal static void PostDeobf_SteamInventoryPlayerChatDrop()
+        {
+            _shouldNotParse = false;
+        }
+
+        [HarmonyPatch(typeof(SteamFriends), nameof(SteamFriends.GetFriendPersonaName))]
+        [HarmonyPostfix]
+        internal static void PostSteamFriendsGetFriendPersonaName(ref string __result)
+        {
+            if (_shouldNotParse)
+                __result = $"<noparse>{__result.Replace("noparse", "")}</noparse>";
+        }
+
+
+        // Don't accept player chat drops from players that just recently got a drop
+        private static readonly HashSet<ulong> _recentDrops = [];
+
+        // Don't accept player chat drops from players with potential rich text in their names
+        [HarmonyPatch(typeof(ServerHandle), nameof(ServerHandle.PlayerDropSerialized))]
+        [HarmonyPrefix]
+        [HarmonyPriority(int.MaxValue)]
+        internal static bool PreServerHandlePlayerDropSerialized(ulong param_0)
+        {
+            if (_recentDrops.Contains(param_0))
+                return false;
+
+            _recentDrops.Add(param_0);
+            MainManager.Instance.StartCoroutine(CoroChatDropCooldown(param_0));
+
+            string name = SteamFriends.GetFriendPersonaName(new(param_0));
+            int start = name.IndexOf('<');
+            if (start == -1 || start + 1 >= name.Length)
+                return true;
+
+            int end = name.IndexOf(">", start + 1);
+            return end == -1;
+        }
+
+        private static IEnumerator CoroChatDropCooldown(ulong clientId)
+        {
+            yield return new WaitForSeconds(1f);
+            _recentDrops.Remove(clientId);
+        }
+    }
+
+
+    internal static class AntiShadowModPatches
+    {
+        // Forces players hiding with ShadowMod (or having just recently joined) to be listed in the player list
+        [HarmonyPatch(typeof(PlayerList), nameof(PlayerList.UpdateList))]
+        [HarmonyPostfix]
+        internal static void PostPlayerListUpdateList(PlayerList __instance)
+        {
+            if (!SteamManager.Instance.IsLobbyOwner())
+                return;
+
+            foreach (Client client in LobbyManager.Instance.GetClients())
+            {
+                if (client.field_Public_CSteamID_0 == CSteamID.Nil || __instance.field_Private_Dictionary_2_UInt64_MonoBehaviourPublicRabaicRaTeusscTepiObUnique_0.ContainsKey(client.field_Public_CSteamID_0.m_SteamID))
+                    continue;
+
+                PlayerListingPrefab playerListPlayer = UnityEngine.Object.Instantiate(__instance.namePrefab, __instance.contentParent).GetComponent<PlayerListingPrefab>();
+                __instance.field_Private_Dictionary_2_UInt64_MonoBehaviourPublicRabaicRaTeusscTepiObUnique_0.Add(client.field_Public_CSteamID_0.m_SteamID, playerListPlayer);
+
+                playerListPlayer.username.text = Chatbox.RemoveRichText(SteamFriends.GetFriendPersonaName(client.field_Public_CSteamID_0));
+                if (GameManager.Instance.activePlayers.ContainsKey(client.field_Public_CSteamID_0.m_SteamID))
+                    playerListPlayer.SetPlayer(GameManager.Instance.activePlayers[client.field_Public_CSteamID_0.m_SteamID]);
+                else
+                    playerListPlayer.SetSpectator(client.field_Public_CSteamID_0.m_SteamID);
+
+                playerListPlayer.background.color = Color.yellow;
+                playerListPlayer.icon.color = Color.yellow;
+            }
         }
     }
 }
