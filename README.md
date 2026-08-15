@@ -8,6 +8,10 @@
 - A log and chat message (optionally disabled via config) is sent to notify you of what was flagged and who triggered it.
 - If you're a client, under certain conditions you'll stop future P2P with the crasher. If the crasher is the host, you'll immediately leave the lobby.
   - Certain conditions include if the crasher is directly sending the packets to you.
-  - If the crasher sends a crasher packet to the host and that's forwarded to you (because the host doesn't have Anti Crasher), you'll flag and discard. it but won't stop P2P with the host.
+  - If the crasher sends a crasher packet to the host and that's forwarded to you (because the host doesn't have Anti Crasher), you'll flag and discard it, but won't stop P2P with the host.
 - If you're the host, you'll ban them and discard future packets from them until they rejoin.
   - If you have [PersistentData](https://thunderstore.io/c/crab-game/p/lammas123/PersistentData/), you may optionally enable permanently banning those who are flagged via config.
+
+## Anti Shadow Mod
+- As a host, not all players are always listed in your player list (for some reason), some may be hidden for a short period after joining, or hidden via a mod they use (Shadow Mod).
+- Now, players that would have normally been hidden from your the player list will be listed with a yellow background, allowing you to know they exist and moderate them as normal.
